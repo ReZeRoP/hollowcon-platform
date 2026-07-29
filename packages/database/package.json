@@ -1,0 +1,21 @@
+{
+  "name": "@hollowcon/database",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "prisma generate && node -e \"require('node:fs').mkdirSync('dist',{recursive:true});require('node:fs').writeFileSync('dist/.generated','prisma client generated\\n')\"",
+    "generate": "prisma generate",
+    "migrate": "prisma migrate deploy",
+    "lint": "cross-env DATABASE_URL=postgresql://hollowcon:validation@localhost:5432/hollowcon prisma validate",
+    "test": "vitest run --passWithNoTests",
+    "typecheck": "cross-env DATABASE_URL=postgresql://hollowcon:validation@localhost:5432/hollowcon prisma validate"
+  },
+  "dependencies": {
+    "@prisma/client": "^6.12.0"
+  },
+  "devDependencies": {
+    "cross-env": "^7.0.3",
+    "prisma": "^6.12.0"
+  }
+}

@@ -1,0 +1,17 @@
+node_modules/
+.pnpm-store/
+.turbo/
+dist/
+.next/
+coverage/
+.env
+.env.*
+!.env.example
+*.log
+*.tsbuildinfo
+.DS_Store
+receipts/
+backups/
+packages/database/prisma/*.db
+.workbuddy-ai/
+identity/

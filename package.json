@@ -1,0 +1,31 @@
+{
+  "name": "hollowcon",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Persian-first Telegram VPN commerce and 3x-ui automation platform",
+  "license": "AGPL-3.0-only",
+  "packageManager": "pnpm@10.14.0",
+  "engines": {
+    "node": ">=22.0.0"
+  },
+  "scripts": {
+    "build": "turbo build",
+    "dev": "turbo dev --parallel",
+    "lint": "turbo lint",
+    "test": "turbo test",
+    "typecheck": "turbo typecheck",
+    "check": "pnpm lint && pnpm typecheck && pnpm test && pnpm build",
+    "db:generate": "pnpm --filter @hollowcon/database generate",
+    "db:migrate": "pnpm --filter @hollowcon/database migrate"
+  },
+  "devDependencies": {
+    "@eslint/js": "^9.31.0",
+    "@types/node": "^22.15.0",
+    "eslint": "^9.31.0",
+    "prettier": "^3.6.2",
+    "turbo": "^2.5.5",
+    "typescript": "^5.8.3",
+    "typescript-eslint": "^8.38.0",
+    "vitest": "^3.2.4"
+  }
+}

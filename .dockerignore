@@ -1,0 +1,14 @@
+.git
+.github
+.workbuddy-ai
+node_modules
+**/node_modules
+**/dist
+**/.turbo
+coverage
+.env
+.env.*
+!.env.example
+receipts
+backups
+*.log

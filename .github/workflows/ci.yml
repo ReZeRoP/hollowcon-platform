@@ -1,0 +1,43 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10.14.0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm check
+      - name: Validate shell scripts
+        run: bash -n scripts/*.sh
+      - name: Verify Prisma migration matches schema
+        env:
+          DATABASE_URL: postgresql://validation:validation@localhost:5432/validation
+        run: |
+          pnpm --filter @hollowcon/database exec prisma migrate diff \
+            --from-migrations packages/database/prisma/migrations \
+            --to-schema-datamodel packages/database/prisma/schema.prisma \
+            --exit-code
+
+  containers:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Validate production Compose
+        run: cp .env.example .env && docker compose --env-file .env -f infra/compose.prod.yml config --quiet
+      - name: Build service images
+        run: docker build --target api -t hollowcon-api:ci . && docker build --target web -t hollowcon-web:ci . && docker build --target bot -t hollowcon-bot:ci . && docker build --target worker -t hollowcon-worker:ci .

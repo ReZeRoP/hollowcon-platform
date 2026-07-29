@@ -1,0 +1,259 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum Locale {
+  fa
+  en
+}
+
+enum Role {
+  owner
+  admin
+  finance
+  support
+  server_operator
+  marketing
+  auditor
+}
+
+enum OrderStatus {
+  draft
+  awaiting_receipt
+  under_review
+  approved
+  rejected
+  expired
+  cancelled
+}
+
+enum ProvisioningStatus {
+  queued
+  running
+  verifying
+  delivered
+  failed
+  compensating
+  manual_review
+}
+
+enum SubscriptionStatus {
+  pending
+  active
+  suspended
+  expired
+  migrating
+  cancelled
+}
+
+model User {
+  id                   String         @id @default(cuid())
+  telegramId           BigInt         @unique
+  username             String?
+  firstName            String?
+  phone                 String?
+  locale                Locale         @default(fa)
+  role                  Role?
+  termsAcceptedAt       DateTime?
+  createdAt             DateTime       @default(now())
+  updatedAt             DateTime       @updatedAt
+  orders                Order[]
+  subscriptions         Subscription[]
+  auditEvents           AuditEvent[]   @relation("AuditActor")
+  reviewedPayments      PaymentReview[] @relation("PaymentReviewer")
+}
+
+model Plan {
+  id              String   @id @default(cuid())
+  slug            String   @unique
+  nameFa          String
+  nameEn          String
+  priceRial       BigInt
+  durationDays    Int
+  trafficBytes    BigInt
+  deviceLimit     Int      @default(0)
+  protocol        String
+  active          Boolean  @default(true)
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+  orders          Order[]
+}
+
+model RecipientCard {
+  id                String   @id @default(cuid())
+  panEncrypted      String
+  panLastFour       String
+  cardholderName    String
+  active            Boolean  @default(true)
+  pendingLimit      Int      @default(100)
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+  orders            Order[]
+}
+
+model Order {
+  id                  String             @id @default(cuid())
+  userId              String
+  planId              String
+  recipientCardId     String
+  status              OrderStatus        @default(draft)
+  baseAmountRial      BigInt
+  uniqueSuffixRial    Int
+  payableAmountRial   BigInt
+  reservationExpires DateTime
+  version             Int                @default(0)
+  approvedAt          DateTime?
+  createdAt           DateTime           @default(now())
+  updatedAt           DateTime           @updatedAt
+  user                 User               @relation(fields: [userId], references: [id])
+  plan                 Plan               @relation(fields: [planId], references: [id])
+  recipientCard        RecipientCard      @relation(fields: [recipientCardId], references: [id])
+  receipt              PaymentReceipt?
+  reviews              PaymentReview[]
+  provisioning         ProvisioningJob?
+  subscription         Subscription?
+
+  @@unique([recipientCardId, payableAmountRial, reservationExpires])
+  @@index([status, reservationExpires])
+  @@index([userId, createdAt])
+}
+
+model PaymentReceipt {
+  id              String   @id @default(cuid())
+  orderId         String   @unique
+  storageKey      String   @unique
+  mediaType       String
+  byteSize        Int
+  sha256          String
+  perceptualHash  String?
+  submittedAt     DateTime @default(now())
+  order           Order    @relation(fields: [orderId], references: [id])
+
+  @@index([sha256])
+  @@index([perceptualHash])
+}
+
+model PaymentReview {
+  id          String   @id @default(cuid())
+  orderId     String
+  reviewerId  String
+  approved    Boolean
+  reason      String
+  createdAt   DateTime @default(now())
+  order       Order    @relation(fields: [orderId], references: [id])
+  reviewer    User     @relation("PaymentReviewer", fields: [reviewerId], references: [id])
+
+  @@index([orderId, createdAt])
+}
+
+model Panel {
+  id                   String   @id @default(cuid())
+  name                 String
+  baseUrl              String   @unique
+  apiTokenEncrypted    String
+  expectedVersion      String   @default("3.5.0")
+  enabled              Boolean  @default(true)
+  weight               Int      @default(100)
+  consecutiveFailures  Int      @default(0)
+  circuitOpenUntil     DateTime?
+  lastHealthyAt        DateTime?
+  lastErrorCode        String?
+  createdAt            DateTime @default(now())
+  updatedAt            DateTime @updatedAt
+  inbounds              PanelInbound[]
+  subscriptions         Subscription[]
+}
+
+model PanelInbound {
+  id              String   @id @default(cuid())
+  panelId         String
+  remoteId        Int
+  tag             String
+  remark          String
+  protocol        String
+  port            Int
+  enabled         Boolean  @default(true)
+  capacity        Int?
+  activeClients   Int      @default(0)
+  lastSyncedAt    DateTime?
+  panel           Panel    @relation(fields: [panelId], references: [id])
+  subscriptions   Subscription[]
+
+  @@unique([panelId, remoteId])
+  @@index([enabled, protocol])
+}
+
+model ProvisioningJob {
+  id              String             @id @default(cuid())
+  orderId         String             @unique
+  status          ProvisioningStatus @default(queued)
+  idempotencyKey  String             @unique
+  attempts        Int                @default(0)
+  lastErrorCode   String?
+  lastErrorSafe   String?
+  lockedAt        DateTime?
+  deliveredAt     DateTime?
+  createdAt       DateTime           @default(now())
+  updatedAt       DateTime           @updatedAt
+  order           Order              @relation(fields: [orderId], references: [id])
+}
+
+model Subscription {
+  id                String             @id @default(cuid())
+  userId            String
+  orderId           String             @unique
+  panelId           String
+  panelInboundId    String
+  remoteClientEmail String
+  remoteSubId       String?
+  status            SubscriptionStatus @default(pending)
+  trafficBytes      BigInt
+  expiresAt         DateTime
+  lastReconciledAt  DateTime?
+  createdAt         DateTime           @default(now())
+  updatedAt         DateTime           @updatedAt
+  user              User               @relation(fields: [userId], references: [id])
+  order             Order              @relation(fields: [orderId], references: [id])
+  panel             Panel              @relation(fields: [panelId], references: [id])
+  panelInbound      PanelInbound       @relation(fields: [panelInboundId], references: [id])
+
+  @@unique([panelId, remoteClientEmail])
+  @@index([userId, status])
+}
+
+model OutboxEvent {
+  id            String   @id @default(cuid())
+  aggregateType String
+  aggregateId   String
+  eventType     String
+  payload       Json
+  idempotencyKey String  @unique
+  availableAt   DateTime @default(now())
+  processedAt   DateTime?
+  attempts      Int      @default(0)
+  createdAt     DateTime @default(now())
+
+  @@index([processedAt, availableAt])
+}
+
+model AuditEvent {
+  id             String   @id @default(cuid())
+  actorId        String?
+  action         String
+  subjectType    String
+  subjectId      String
+  reason         String?
+  correlationId  String
+  ipHash         String?
+  metadata       Json
+  createdAt      DateTime @default(now())
+  actor          User?    @relation("AuditActor", fields: [actorId], references: [id])
+
+  @@index([subjectType, subjectId, createdAt])
+  @@index([actorId, createdAt])
+}
