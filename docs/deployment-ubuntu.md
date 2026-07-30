@@ -1,6 +1,6 @@
 # Deploy Hollowcon from GitHub on Ubuntu
 
-> Hollowcon is currently a deployable **pre-release foundation**. Containers, TLS, database migrations, health checks, the starter bot, and the holding web page run. The complete commerce API, provisioning worker, Mini App, and admin dashboard are not finished and must not yet be used for real customers or payments.
+> Hollowcon now includes the first complete purchase-flow implementation: Telegram-authenticated setup, plans, manual card-to-card orders, receipt storage, finance review, an idempotent provisioning worker, Mini App screens, and an admin surface. It remains **pre-production** until you complete the controlled live-panel smoke test below. Do not enable real customer orders or panel mutations before that gate succeeds.
 
 ## Requirements
 
@@ -44,6 +44,21 @@ cd /opt/hollowcon
 
 Caddy obtains and renews the TLS certificate automatically after DNS and firewall configuration are correct. Service ports are fixed inside the Compose network (`3000`–`3003`) and are not published publicly; do not add or override `API_PORT`, `WEB_PORT`, `BOT_HEALTH_PORT`, or `WORKER_HEALTH_PORT` in `.env`.
 
+## First-run safety gate
+
+1. Open the bot and then its Mini App (`https://your-domain/mini`) as the Telegram ID configured in `INITIAL_OWNER_TELEGRAM_ID`.
+2. Complete the owner setup: recipient card, at least one plan, HTTPS 3x-ui URL/token, then select plan-eligible inbounds. The panel check performs read-only health and inbound discovery only.
+3. Keep these values in `.env` while you verify setup:
+
+```dotenv
+CUSTOMER_ORDERS_ENABLED=false
+PANEL_MUTATIONS_ENABLED=false
+```
+
+4. Confirm the payment-review screen, private receipt storage, and a full backup/restore drill.
+5. Choose one controlled inbound and a low-value test order. Set both flags to `true`, deploy with `./scripts/update.sh`, approve the test receipt only after manual bank confirmation, and verify the deterministic client, delivered links, audit event, and status screens.
+6. Keep a tested backup. Only then enable real customer orders. If an external panel call is ambiguous, leave the job in manual review; do not delete or recreate clients blindly.
+
 ## Operations
 
 ```bash
@@ -68,6 +83,7 @@ cd /opt/hollowcon
 
 - Never commit `.env`, receipt files, backups, panel tokens, or Telegram tokens.
 - PostgreSQL and Redis are not published on host ports in the production Compose stack.
-- Receipt and payment features are not production-ready until secure upload/content inspection and real concurrency tests are complete.
-- The starter bot currently uses Telegram long polling. Webhook mode will replace it when the full API is implemented.
+- Receipt upload validates declared media type, content magic bytes, file size, SHA-256, and private randomized storage paths; staff access is authorized and audited.
+- Receipt images are evidence for an operator, not automatic settlement proof. Do not enable automatic approval.
+- The bot uses Telegram long polling for the first release. The web surface verifies Telegram Mini App data server-side and uses secure session cookies plus CSRF/origin checks.
 - Verify transfers against bank records; receipt images never prove settlement automatically.

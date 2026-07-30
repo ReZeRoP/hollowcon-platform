@@ -90,6 +90,8 @@ services:
     build: { context: .., target: worker }
     environment:
       WORKER_HEALTH_PORT: "3003"
+      # Keep real panel mutations disabled until the controlled live-panel smoke test.
+      PANEL_MUTATIONS_ENABLED: "${PANEL_MUTATIONS_ENABLED:-false}"
     depends_on:
       migrate: { condition: service_completed_successfully }
       redis: { condition: service_healthy }

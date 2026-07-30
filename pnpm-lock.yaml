@@ -35,12 +35,30 @@ importers:
 
   apps/api:
     dependencies:
+      '@hollowcon/commerce':
+        specifier: workspace:*
+        version: link:../../packages/commerce
       '@hollowcon/config':
         specifier: workspace:*
         version: link:../../packages/config
+      '@hollowcon/contracts':
+        specifier: workspace:*
+        version: link:../../packages/contracts
+      '@hollowcon/security':
+        specifier: workspace:*
+        version: link:../../packages/security
+      '@hollowcon/telegram':
+        specifier: workspace:*
+        version: link:../../packages/telegram
+      '@hollowcon/three-x-ui':
+        specifier: workspace:*
+        version: link:../../packages/three-x-ui
       '@prisma/client':
         specifier: ^6.12.0
         version: 6.19.3(prisma@6.19.3(typescript@5.9.3))(typescript@5.9.3)
+      zod:
+        specifier: ^4.0.10
+        version: 4.4.3
     devDependencies:
       tsx:
         specifier: ^4.20.3
@@ -48,9 +66,18 @@ importers:
 
   apps/bot:
     dependencies:
+      '@hollowcon/commerce':
+        specifier: workspace:*
+        version: link:../../packages/commerce
       '@hollowcon/config':
         specifier: workspace:*
         version: link:../../packages/config
+      '@hollowcon/security':
+        specifier: workspace:*
+        version: link:../../packages/security
+      '@prisma/client':
+        specifier: ^6.12.0
+        version: 6.19.3(prisma@6.19.3(typescript@5.9.3))(typescript@5.9.3)
       grammy:
         specifier: ^1.36.3
         version: 1.45.1
@@ -70,6 +97,12 @@ importers:
       '@hollowcon/config':
         specifier: workspace:*
         version: link:../../packages/config
+      '@hollowcon/security':
+        specifier: workspace:*
+        version: link:../../packages/security
+      '@hollowcon/three-x-ui':
+        specifier: workspace:*
+        version: link:../../packages/three-x-ui
       '@prisma/client':
         specifier: ^6.12.0
         version: 6.19.3(prisma@6.19.3(typescript@5.9.3))(typescript@5.9.3)
@@ -93,6 +126,12 @@ importers:
         specifier: ^4.0.10
         version: 4.4.3
 
+  packages/contracts:
+    dependencies:
+      zod:
+        specifier: ^4.0.10
+        version: 4.4.3
+
   packages/database:
     dependencies:
       '@prisma/client':
@@ -109,6 +148,8 @@ importers:
   packages/domain: {}
 
   packages/i18n: {}
+
+  packages/security: {}
 
   packages/telegram: {}
 

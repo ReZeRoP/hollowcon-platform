@@ -13,6 +13,8 @@
   },
   "dependencies": {
     "@hollowcon/config": "workspace:*",
+    "@hollowcon/security": "workspace:*",
+    "@hollowcon/three-x-ui": "workspace:*",
     "@prisma/client": "^6.12.0"
   },
   "devDependencies": { "tsx": "^4.20.3" }

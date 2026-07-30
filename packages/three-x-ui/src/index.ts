@@ -22,7 +22,18 @@ export interface CreateClientInput {
 }
 
 export class ThreeXUiError extends Error {
-  constructor(message: string, readonly status?: number) { super(message); }
+  public constructor(message: string, readonly status?: number) {
+    super(message);
+    this.name = "ThreeXUiError";
+  }
+}
+
+export type ThreeXUiFailureClass = "retryable" | "manual_review";
+
+export function classifyThreeXUiFailure(error: unknown): ThreeXUiFailureClass {
+  if (!(error instanceof ThreeXUiError)) return "retryable";
+  if (error.status === undefined || error.status === 408 || error.status === 429 || error.status >= 500) return "retryable";
+  return "manual_review";
 }
 
 export class ThreeXUiClient {
@@ -38,6 +49,10 @@ export class ThreeXUiClient {
   }
 
   async health(): Promise<unknown> { return this.request("panel/api/server/status", "GET", z.unknown()); }
+  async testConnection(): Promise<{ readonly health: unknown; readonly inbounds: z.infer<typeof inboundOption>[] }> {
+    const [health, inbounds] = await Promise.all([this.health(), this.listInboundOptions()]);
+    return { health, inbounds };
+  }
   async listInboundOptions(): Promise<z.infer<typeof inboundOption>[]> { return this.request("panel/api/inbounds/options", "GET", z.array(inboundOption)); }
   async getClient(email: string): Promise<z.infer<typeof client>> { return this.request(`panel/api/clients/get/${encodeURIComponent(email)}`, "GET", client); }
   async createClient(input: CreateClientInput): Promise<unknown> {

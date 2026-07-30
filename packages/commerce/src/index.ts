@@ -21,6 +21,7 @@ export interface CreateOrderInput {
   readonly userId: string;
   readonly planId: string;
   readonly recipientCardId: string;
+  readonly idempotencyKey: string;
   readonly reservationMinutes: number;
   readonly uniqueSuffixMin?: number;
   readonly uniqueSuffixMax?: number;
@@ -31,8 +32,11 @@ export interface SubmitReceiptInput {
   readonly orderId: string;
   readonly storageKey: string;
   readonly mediaType: string;
+  readonly detectedMediaType: string;
   readonly byteSize: number;
   readonly sha256: string;
+  readonly originalFileName?: string;
+  readonly telegramFileId?: string;
   readonly perceptualHash?: string;
   readonly now?: Date;
 }
@@ -72,6 +76,7 @@ export class CommerceService {
 
   public async createOrder(input: CreateOrderInput): Promise<Order> {
     const now = input.now ?? new Date();
+    const idempotencyKey = requireIdempotencyKey(input.idempotencyKey);
     const reservationMinutes = requireIntegerRange(
       input.reservationMinutes,
       MIN_RESERVATION_MINUTES,
@@ -85,6 +90,14 @@ export class CommerceService {
     }
 
     return this.database.$transaction(async (transaction) => {
+      const existing = await transaction.order.findUnique({ where: { idempotencyKey } });
+      if (existing) {
+        if (existing.userId !== input.userId || existing.planId !== input.planId || existing.recipientCardId !== input.recipientCardId) {
+          throw new CommerceConflictError("Order idempotency key was already used with different input");
+        }
+        return existing;
+      }
+
       const [plan, recipientCard] = await Promise.all([
         transaction.plan.findUnique({ where: { id: input.planId } }),
         transaction.recipientCard.findUnique({ where: { id: input.recipientCardId } }),
@@ -138,6 +151,13 @@ export class CommerceService {
               baseAmountRial: plan.priceRial,
               uniqueSuffixRial: suffix,
               payableAmountRial: BigInt(payable),
+              idempotencyKey,
+              planNameFa: plan.nameFa,
+              planNameEn: plan.nameEn,
+              durationDays: plan.durationDays,
+              trafficBytes: plan.trafficBytes,
+              deviceLimit: plan.deviceLimit,
+              protocol: plan.protocol,
               reservationExpires,
             },
           });
@@ -154,8 +174,9 @@ export class CommerceService {
 
   public async submitReceipt(input: SubmitReceiptInput): Promise<PaymentReceipt> {
     const mediaType = input.mediaType.toLowerCase();
-    if (!RECEIPT_MEDIA_TYPES.has(mediaType)) {
-      throw new CommerceValidationError("Unsupported receipt media type");
+    const detectedMediaType = input.detectedMediaType.toLowerCase();
+    if (!RECEIPT_MEDIA_TYPES.has(mediaType) || mediaType !== detectedMediaType) {
+      throw new CommerceValidationError("Unsupported or mismatched receipt media type");
     }
     requireIntegerRange(input.byteSize, MIN_RECEIPT_BYTES, MAX_RECEIPT_BYTES, "byteSize");
     if (!/^[a-f0-9]{64}$/u.test(input.sha256)) {
@@ -182,22 +203,33 @@ export class CommerceService {
         throw new CommerceConflictError(`Order cannot accept a receipt while ${order.status}`);
       }
 
+      const duplicateCount = await transaction.paymentReceipt.count({
+        where: { sha256: input.sha256, NOT: { orderId: order.id } },
+      });
       const receipt = await transaction.paymentReceipt.upsert({
         where: { orderId: order.id },
         create: {
           orderId: order.id,
           storageKey: input.storageKey,
           mediaType,
+          detectedMediaType,
+          ...(input.originalFileName ? { originalFileName: input.originalFileName } : {}),
+          ...(input.telegramFileId ? { telegramFileId: input.telegramFileId } : {}),
           byteSize: input.byteSize,
           sha256: input.sha256,
+          duplicateCount,
           ...(input.perceptualHash ? { perceptualHash: input.perceptualHash } : {}),
           submittedAt: now,
         },
         update: {
           storageKey: input.storageKey,
           mediaType,
+          detectedMediaType,
+          originalFileName: input.originalFileName ?? null,
+          telegramFileId: input.telegramFileId ?? null,
           byteSize: input.byteSize,
           sha256: input.sha256,
+          duplicateCount,
           perceptualHash: input.perceptualHash ?? null,
           submittedAt: now,
         },
@@ -328,6 +360,14 @@ async function lockOrder(transaction: TransactionClient, orderId: string): Promi
 
 function canReviewPayments(role: "owner" | "admin" | "finance" | "support" | "server_operator" | "marketing" | "auditor"): boolean {
   return role === "owner" || role === "admin" || role === "finance";
+}
+
+function requireIdempotencyKey(value: string): string {
+  const normalized = value.trim();
+  if (!/^[A-Za-z0-9:_-]{16,128}$/u.test(normalized)) {
+    throw new CommerceValidationError("idempotencyKey must be 16-128 URL-safe characters");
+  }
+  return normalized;
 }
 
 function requireIntegerRange(value: number, minimum: number, maximum: number, name: string): number {
