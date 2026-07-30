@@ -26,7 +26,7 @@ fi
 
 docker compose --env-file "$ROOT_DIR/.env" -f "$COMPOSE_FILE" config --quiet
 docker compose --env-file "$ROOT_DIR/.env" -f "$COMPOSE_FILE" build
-docker compose --env-file "$ROOT_DIR/.env" -f "$COMPOSE_FILE" up -d
+docker compose --env-file "$ROOT_DIR/.env" -f "$COMPOSE_FILE" up -d --force-recreate
 "$ROOT_DIR/scripts/doctor.sh"
 
 echo "Hollowcon pre-release foundation is running. Complete product features remain under development."
