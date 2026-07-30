@@ -12,6 +12,6 @@ COMPOSE=(docker compose --env-file "$ROOT_DIR/.env" -f "$ROOT_DIR/infra/compose.
 "${COMPOSE[@]}" exec -T postgres dropdb -U hollowcon --if-exists hollowcon
 "${COMPOSE[@]}" exec -T postgres createdb -U hollowcon hollowcon
 "${COMPOSE[@]}" exec -T postgres pg_restore -U hollowcon -d hollowcon --clean --if-exists < "$BACKUP/database.dump"
-"${COMPOSE[@]}" run --rm --no-deps -v "$BACKUP:/backup:ro" api sh -c 'rm -rf /var/lib/hollowcon/receipts/* && tar -C /var/lib/hollowcon -xzf /backup/receipts.tar.gz'
+"${COMPOSE[@]}" run --rm --no-deps -T --user 0:0 api sh -c 'rm -rf /var/lib/hollowcon/receipts/* && tar -C /var/lib/hollowcon -xzf -' < "$BACKUP/receipts.tar.gz"
 "${COMPOSE[@]}" up -d
 "$ROOT_DIR/scripts/doctor.sh"
