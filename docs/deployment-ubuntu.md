@@ -18,7 +18,7 @@ sudo apt-get install -y git ca-certificates curl
 # Install Docker from: https://docs.docker.com/engine/install/ubuntu/
 sudo install -d -m 0755 /opt/hollowcon
 sudo chown "$USER":"$USER" /opt/hollowcon
-git clone https://github.com/ReZeRoP/hollowcon.git /opt/hollowcon
+git clone https://github.com/ReZeRoP/hollowcon-platform.git /opt/hollowcon
 cd /opt/hollowcon
 ./scripts/install.sh
 ```
@@ -42,7 +42,7 @@ cd /opt/hollowcon
 ./scripts/install.sh
 ```
 
-Caddy obtains and renews the TLS certificate automatically after DNS and firewall configuration are correct.
+Caddy obtains and renews the TLS certificate automatically after DNS and firewall configuration are correct. Service ports are fixed inside the Compose network (`3000`–`3003`) and are not published publicly; do not add or override `API_PORT`, `WEB_PORT`, `BOT_HEALTH_PORT`, or `WORKER_HEALTH_PORT` in `.env`.
 
 ## Operations
 
