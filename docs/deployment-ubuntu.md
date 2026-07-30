@@ -62,7 +62,7 @@ cd /opt/hollowcon
 
 `update.sh` always creates a backup before applying migrations. Prisma migrations are forward-only. `rollback.sh` never attempts to reverse database changes; use a verified backup and `restore.sh` when database rollback is required.
 
-`backup.sh` creates a PostgreSQL custom dump, a receipt archive, and SHA-256 checksums. It lists expired backup directories but does not automatically delete them. Copy backups to encrypted off-server storage and regularly test restoration.
+`backup.sh` creates a PostgreSQL custom dump, streams a receipt archive from the private Docker volume to a host-owned `0600` file, and writes SHA-256 checksums. Failed attempts remove incomplete backup artifacts. It lists expired backup directories but does not automatically delete them. Copy backups to encrypted off-server storage and regularly test restoration.
 
 ## Security notes
 
