@@ -83,15 +83,14 @@ cd /opt/hollowcon
 ./scripts/doctor.sh
 ./scripts/logs.sh
 ./scripts/backup.sh
-./scripts/update.sh                 # backup, fetch, deploy origin/main
-./scripts/update.sh v0.2.0          # deploy an immutable tag
+./scripts/update.sh v0.2.0          # backup, fetch, and deploy an immutable tag
 ./scripts/rollback.sh <tag-or-sha>  # application code only
 ./scripts/restore.sh backups/<timestamp>
 ./scripts/uninstall.sh              # preserve data
 ./scripts/uninstall.sh --delete-data
 ```
 
-`update.sh` always creates a backup before applying migrations. Prisma migrations are forward-only. `rollback.sh` never attempts to reverse database changes; use a verified backup and `restore.sh` when database rollback is required.
+`update.sh` requires an immutable semantic release tag, creates a backup before applying migrations, and refuses moving branches such as `origin/main`. Prisma migrations are forward-only. `rollback.sh` never attempts to reverse database changes; use a verified backup and `restore.sh` when database rollback is required.
 
 `backup.sh` creates a PostgreSQL custom dump, streams a receipt archive from the private Docker volume to a host-owned `0600` file, and writes SHA-256 checksums. Failed attempts remove incomplete backup artifacts. It lists expired backup directories but does not automatically delete them. Copy backups to encrypted off-server storage and regularly test restoration.
 
