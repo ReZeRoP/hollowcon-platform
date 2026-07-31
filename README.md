@@ -12,7 +12,9 @@ Hollowcon is a Persian-first Telegram bot, Mini App, and administration platform
 
 ## Current status
 
-This repository is under active development and is **not yet a production release**. It now includes Telegram-authenticated owner bootstrap/setup, encrypted recipient-card and panel credentials, plans, exact-rial card-to-card orders, private receipt handling, manual finance review, idempotent 3x-ui provisioning, durable delivery notifications, a customer Mini App, and an owner/admin surface. The remaining release gates are PostgreSQL concurrency and end-to-end tests, a controlled non-destructive live-panel smoke test, verified backup/restore recovery, and an operator decision to enable the guarded `CUSTOMER_ORDERS_ENABLED` and `PANEL_MUTATIONS_ENABLED` flags. Do not accept real customer payments until those gates pass.
+Hollowcon is deployment-ready for a guarded production rollout. The repository includes Telegram-authenticated owner bootstrap, encrypted recipient-card and panel credentials, exact-rial card-to-card orders, private receipt evidence, manual finance review, idempotent 3x-ui provisioning, durable Telegram link/QR delivery, a Persian-first Mini App, RBAC administration, audit events, backup/restore tooling, and automated PostgreSQL and production-Compose validation.
+
+A new installation intentionally starts with `CUSTOMER_ORDERS_ENABLED=false` and `PANEL_MUTATIONS_ENABLED=false`. Deploy the immutable release, complete owner setup, and run the documented low-value owner-only live-panel test before enabling normal customer orders. Receipt files never approve payments automatically; finance staff must match the exact rial amount against bank records.
 
 ## Development
 

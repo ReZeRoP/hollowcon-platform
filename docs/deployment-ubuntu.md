@@ -1,6 +1,6 @@
 # Deploy Hollowcon from GitHub on Ubuntu
 
-> Hollowcon now includes the first complete purchase-flow implementation: Telegram-authenticated setup, plans, manual card-to-card orders, receipt storage, finance review, an idempotent provisioning worker, Mini App screens, and an admin surface. It remains **pre-production** until you complete the controlled live-panel smoke test below. Do not enable real customer orders or panel mutations before that gate succeeds.
+> Hollowcon is deployment-ready for a guarded production rollout: Telegram-authenticated setup, plans, manual card-to-card orders, private receipt storage, finance review, idempotent provisioning, durable Telegram delivery, Mini App screens, RBAC administration, and Ubuntu operations are included. New deployments intentionally keep customer orders and panel mutations disabled until the controlled live-panel acceptance test below succeeds.
 
 ## Requirements
 
