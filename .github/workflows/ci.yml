@@ -58,21 +58,28 @@ jobs:
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
-      - name: Validate production Compose
-        run: cp .env.example .env && docker compose --env-file .env -f infra/compose.prod.yml config --quiet
-      - name: Build service images
-        run: docker build --target api -t hollowcon-api:ci . && docker build --target web -t hollowcon-web:ci . && docker build --target bot -t hollowcon-bot:ci . && docker build --target worker -t hollowcon-worker:ci .
-      - name: Start production Compose runtime
+      - name: Prepare and validate production Compose
         run: |
+          cp .env.example .env
           sed -i 's/^INITIAL_OWNER_TELEGRAM_ID=.*/INITIAL_OWNER_TELEGRAM_ID=1/' .env
           sed -i 's/^TELEGRAM_BOT_TOKEN=.*/TELEGRAM_BOT_TOKEN=123456789:ci-placeholder-token-value/' .env
           sed -i 's/^POSTGRES_PASSWORD=.*/POSTGRES_PASSWORD=hollowcon_ci/' .env
           sed -i 's|^DATABASE_URL=.*|DATABASE_URL=postgresql://hollowcon:hollowcon_ci@postgres:5432/hollowcon|' .env
-          docker compose --env-file .env -f infra/compose.prod.yml up -d --build --wait --wait-timeout 300 postgres redis migrate receipt-init api web worker
+          docker compose --env-file .env -f infra/compose.prod.yml config --quiet
+      - name: Build service images
+        run: docker build --target api -t hollowcon-api:ci . && docker build --target web -t hollowcon-web:ci . && docker build --target bot -t hollowcon-bot:ci . && docker build --target worker -t hollowcon-worker:ci .
+      - name: Start production Compose runtime
+        run: docker compose --env-file .env -f infra/compose.prod.yml up -d --build --wait --wait-timeout 300 postgres redis migrate receipt-init api web worker
+      - name: Verify one-shot service completion
+        run: |
           test "$(docker compose --env-file .env -f infra/compose.prod.yml ps -aq migrate | xargs docker inspect --format '{{.State.ExitCode}}')" = "0"
           test "$(docker compose --env-file .env -f infra/compose.prod.yml ps -aq receipt-init | xargs docker inspect --format '{{.State.ExitCode}}')" = "0"
-          docker compose --env-file .env -f infra/compose.prod.yml exec -T api wget -qO- http://127.0.0.1:3000/health/ready | grep -q '"status":"ready"'
-          docker compose --env-file .env -f infra/compose.prod.yml exec -T web wget -qO- http://127.0.0.1:3001/health/ready | grep -q '"status":"ready"'
+      - name: Verify API readiness
+        run: docker compose --env-file .env -f infra/compose.prod.yml exec -T api wget -qO- http://127.0.0.1:3000/health/ready | grep -q '"status":"ready"'
+      - name: Verify web readiness
+        run: docker compose --env-file .env -f infra/compose.prod.yml exec -T web wget -qO- http://127.0.0.1:3001/health/ready | grep -q '"status":"ok"'
+      - name: Verify shared private receipt volume
+        run: |
           docker compose --env-file .env -f infra/compose.prod.yml build bot
           docker compose --env-file .env -f infra/compose.prod.yml run --rm --no-deps --entrypoint sh bot -c 'test -r /var/lib/hollowcon/receipts && test -w /var/lib/hollowcon/receipts'
       - name: Show production logs on failure
