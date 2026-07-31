@@ -38,6 +38,8 @@ jobs:
           cache: pnpm
       - run: pnpm install --frozen-lockfile
       - run: pnpm db:generate
+      - name: Build workspace packages for runtime exports
+        run: pnpm build
       - name: Rehearse database migrations
         run: pnpm --filter @hollowcon/database exec prisma migrate deploy --schema prisma/schema.prisma
       - name: Run PostgreSQL commerce concurrency tests
@@ -71,6 +73,7 @@ jobs:
           test "$(docker compose --env-file .env -f infra/compose.prod.yml ps -aq receipt-init | xargs docker inspect --format '{{.State.ExitCode}}')" = "0"
           docker compose --env-file .env -f infra/compose.prod.yml exec -T api wget -qO- http://127.0.0.1:3000/health/ready | grep -q '"status":"ready"'
           docker compose --env-file .env -f infra/compose.prod.yml exec -T web wget -qO- http://127.0.0.1:3001/health/ready | grep -q '"status":"ready"'
+          docker compose --env-file .env -f infra/compose.prod.yml build bot
           docker compose --env-file .env -f infra/compose.prod.yml run --rm --no-deps --entrypoint sh bot -c 'test -r /var/lib/hollowcon/receipts && test -w /var/lib/hollowcon/receipts'
       - name: Show production logs on failure
         if: failure()
