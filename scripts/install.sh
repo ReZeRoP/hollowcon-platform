@@ -29,4 +29,4 @@ docker compose --env-file "$ROOT_DIR/.env" -f "$COMPOSE_FILE" build
 docker compose --env-file "$ROOT_DIR/.env" -f "$COMPOSE_FILE" up -d --force-recreate
 "$ROOT_DIR/scripts/doctor.sh"
 
-echo "Hollowcon pre-release foundation is running. Complete product features remain under development."
+echo "Hollowcon is running with customer orders and panel mutations protected by the configured safety gates. Complete the controlled owner test before enabling normal ordering."
