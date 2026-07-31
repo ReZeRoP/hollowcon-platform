@@ -43,6 +43,19 @@ services:
     depends_on:
       postgres: { condition: service_healthy }
     restart: "no"
+    labels:
+      hollowcon.service-kind: "oneshot"
+
+  receipt-init:
+    build: { context: .., target: api }
+    user: "0:0"
+    env_file: ../.env
+    command: ["sh", "-c", "mkdir -p /var/lib/hollowcon/receipts/.tmp && chown -R 10001:10001 /var/lib/hollowcon/receipts && chmod 0700 /var/lib/hollowcon/receipts /var/lib/hollowcon/receipts/.tmp"]
+    volumes: [receipt_data:/var/lib/hollowcon/receipts]
+    networks: [backend]
+    restart: "no"
+    labels:
+      hollowcon.service-kind: "oneshot"
 
   api:
     <<: *app
@@ -52,6 +65,7 @@ services:
     volumes: [receipt_data:/var/lib/hollowcon/receipts]
     depends_on:
       migrate: { condition: service_completed_successfully }
+      receipt-init: { condition: service_completed_successfully }
       redis: { condition: service_healthy }
     healthcheck:
       test: ["CMD", "wget", "-q", "--spider", "http://127.0.0.1:3000/health/ready"]
@@ -77,6 +91,7 @@ services:
     build: { context: .., target: bot }
     environment:
       BOT_HEALTH_PORT: "3002"
+    volumes: [receipt_data:/var/lib/hollowcon/receipts]
     depends_on:
       api: { condition: service_healthy }
     healthcheck:

@@ -98,6 +98,9 @@ export class CommerceService {
         return existing;
       }
 
+      await lockRecipientCard(transaction, input.recipientCardId);
+      await expireStaleReservations(transaction, now);
+
       const [plan, recipientCard] = await Promise.all([
         transaction.plan.findUnique({ where: { id: input.planId } }),
         transaction.recipientCard.findUnique({ where: { id: input.recipientCardId } }),
@@ -112,7 +115,7 @@ export class CommerceService {
       const pendingOrders = await transaction.order.count({
         where: {
           recipientCardId: recipientCard.id,
-          status: { in: ["draft", "awaiting_receipt", "under_review"] },
+          status: { in: ["draft", "awaiting_receipt", "under_review", "rejected"] },
           reservationExpires: { gt: now },
         },
       });
@@ -125,7 +128,7 @@ export class CommerceService {
         where: {
           recipientCardId: recipientCard.id,
           reservationExpires: { gt: now },
-          status: { in: ["draft", "awaiting_receipt", "under_review"] },
+          status: { in: ["draft", "awaiting_receipt", "under_review", "rejected"] },
           uniqueSuffixRial: { gte: minimum, lte: maximum },
         },
         select: { uniqueSuffixRial: true },
@@ -206,10 +209,21 @@ export class CommerceService {
       const duplicateCount = await transaction.paymentReceipt.count({
         where: { sha256: input.sha256, NOT: { orderId: order.id } },
       });
-      const receipt = await transaction.paymentReceipt.upsert({
-        where: { orderId: order.id },
-        create: {
+      const currentReceipt = await transaction.paymentReceipt.findFirst({
+        where: { orderId: order.id, current: true },
+        orderBy: { revision: "desc" },
+      });
+      if (currentReceipt) {
+        await transaction.paymentReceipt.update({
+          where: { id: currentReceipt.id },
+          data: { current: false, replacedAt: now },
+        });
+      }
+      const receipt = await transaction.paymentReceipt.create({
+        data: {
           orderId: order.id,
+          revision: (currentReceipt?.revision ?? 0) + 1,
+          current: true,
           storageKey: input.storageKey,
           mediaType,
           detectedMediaType,
@@ -219,18 +233,6 @@ export class CommerceService {
           sha256: input.sha256,
           duplicateCount,
           ...(input.perceptualHash ? { perceptualHash: input.perceptualHash } : {}),
-          submittedAt: now,
-        },
-        update: {
-          storageKey: input.storageKey,
-          mediaType,
-          detectedMediaType,
-          originalFileName: input.originalFileName ?? null,
-          telegramFileId: input.telegramFileId ?? null,
-          byteSize: input.byteSize,
-          sha256: input.sha256,
-          duplicateCount,
-          perceptualHash: input.perceptualHash ?? null,
           submittedAt: now,
         },
       });
@@ -283,7 +285,7 @@ export class CommerceService {
       if (order.status !== "under_review") {
         throw new CommerceConflictError(`Order cannot be reviewed while ${order.status}`);
       }
-      const receipt = await transaction.paymentReceipt.findUnique({ where: { orderId: order.id } });
+      const receipt = await transaction.paymentReceipt.findFirst({ where: { orderId: order.id, current: true } });
       if (!receipt) {
         throw new CommerceConflictError("Order has no receipt to review");
       }
@@ -345,7 +347,26 @@ export class CommerceService {
       });
 
       return { order: updatedOrder, review, provisioning, alreadyFinalized: false };
-    }, { isolationLevel: "Serializable" });
+    });
+  }
+}
+
+async function expireStaleReservations(transaction: TransactionClient, now: Date): Promise<void> {
+  await transaction.order.updateMany({
+    where: {
+      reservationExpires: { lte: now },
+      status: { in: ["draft", "awaiting_receipt", "rejected"] },
+    },
+    data: { status: "expired", version: { increment: 1 } },
+  });
+}
+
+async function lockRecipientCard(transaction: TransactionClient, recipientCardId: string): Promise<void> {
+  const rows = await transaction.$queryRaw<Array<{ id: string }>>`
+    SELECT "id" FROM "RecipientCard" WHERE "id" = ${recipientCardId} FOR UPDATE
+  `;
+  if (rows.length === 0) {
+    throw new CommerceNotFoundError("Active recipient card not found");
   }
 }
 

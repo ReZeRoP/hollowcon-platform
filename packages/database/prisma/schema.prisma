@@ -36,10 +36,17 @@ enum ProvisioningStatus {
   queued
   running
   verifying
+  provisioned
   delivered
   failed
   compensating
   manual_review
+}
+
+enum CustomerOrderMode {
+  disabled
+  owner_test
+  enabled
 }
 
 enum SubscriptionStatus {
@@ -71,8 +78,9 @@ model SystemSettings {
   termsVersion           String   @default("1")
   defaultLocale          Locale   @default(fa)
   supportContact         String?
-  customerOrdersEnabled  Boolean  @default(false)
-  panelMutationsEnabled  Boolean  @default(false)
+  customerOrdersEnabled  Boolean           @default(false)
+  customerOrderMode      CustomerOrderMode @default(disabled)
+  panelMutationsEnabled  Boolean           @default(false)
   createdAt              DateTime @default(now())
   updatedAt              DateTime @updatedAt
 }
@@ -85,6 +93,9 @@ model User {
   phone                 String?
   locale                Locale         @default(fa)
   role                  Role?
+  roleAssignedAt        DateTime?
+  roleRevokedAt         DateTime?
+  disabledAt            DateTime?
   termsAcceptedAt       DateTime?
   createdAt             DateTime       @default(now())
   updatedAt             DateTime       @updatedAt
@@ -165,19 +176,21 @@ model Order {
   user                 User               @relation(fields: [userId], references: [id])
   plan                 Plan               @relation(fields: [planId], references: [id])
   recipientCard        RecipientCard      @relation(fields: [recipientCardId], references: [id])
-  receipt              PaymentReceipt?
+  receipts             PaymentReceipt[]
   reviews              PaymentReview[]
   provisioning         ProvisioningJob?
   subscription         Subscription?
 
-  @@unique([recipientCardId, payableAmountRial, reservationExpires])
   @@index([status, reservationExpires])
   @@index([userId, createdAt])
 }
 
 model PaymentReceipt {
   id              String   @id @default(cuid())
-  orderId         String   @unique
+  orderId         String
+  revision        Int      @default(1)
+  current         Boolean  @default(true)
+  replacedAt      DateTime?
   storageKey      String   @unique
   mediaType         String
   detectedMediaType String
@@ -191,6 +204,8 @@ model PaymentReceipt {
   submittedAt       DateTime                @default(now())
   order           Order    @relation(fields: [orderId], references: [id])
 
+  @@unique([orderId, revision])
+  @@index([orderId, current])
   @@index([sha256])
   @@index([perceptualHash])
 }
@@ -292,6 +307,7 @@ model Subscription {
   expiresAt         DateTime
   linksEncrypted    String?
   linksKeyId        String?
+  provisionedAt     DateTime?
   deliveredAt       DateTime?
   trafficUsedBytes  BigInt           @default(0)
   lastReconciledAt  DateTime?
@@ -335,6 +351,8 @@ model Notification {
   idempotencyKey String             @unique
   attempts       Int                @default(0)
   availableAt    DateTime           @default(now())
+  deliveryStep   Int                @default(0)
+  messageIds     Json?
   deliveredAt    DateTime?
   leaseOwner     String?
   leaseExpiresAt DateTime?

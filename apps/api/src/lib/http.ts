@@ -97,8 +97,13 @@ export function parseCookies(request: IncomingMessage): ReadonlyMap<string, stri
 
 export function requireSameOrigin(request: IncomingMessage, publicBaseUrl: string): void {
   const origin = request.headers.origin;
-  if (origin && origin !== publicBaseUrl) {
+  const expectedOrigin = new URL(publicBaseUrl).origin;
+  if (typeof origin !== "string" || origin !== expectedOrigin) {
     throw new ApiError(403, "invalid_origin", "Request origin is not allowed");
+  }
+  const fetchSite = request.headers["sec-fetch-site"];
+  if (typeof fetchSite === "string" && fetchSite !== "same-origin" && fetchSite !== "none") {
+    throw new ApiError(403, "invalid_fetch_site", "Cross-site requests are not allowed");
   }
 }
 

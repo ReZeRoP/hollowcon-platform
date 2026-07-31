@@ -1,8 +1,24 @@
 import { z } from "zod";
 
-const envelope = <T extends z.ZodType>(value: T) => z.object({ success: z.boolean(), msg: z.string().optional(), obj: value.optional() });
-const inboundOption = z.object({ id: z.number().int(), remark: z.string(), tag: z.string(), protocol: z.string(), port: z.number().int(), tlsFlowCapable: z.boolean(), ssMethod: z.string() });
-const client = z.object({ email: z.string(), enable: z.boolean(), expiryTime: z.number().int(), totalGB: z.number().int(), subId: z.string(), limitIp: z.number().int(), comment: z.string() }).passthrough();
+const envelope = z.object({ success: z.boolean(), msg: z.string().optional(), obj: z.unknown().optional() }).passthrough();
+const inboundOption = z.object({
+  id: z.number().int(),
+  remark: z.string().default(""),
+  tag: z.string().default(""),
+  protocol: z.string(),
+  port: z.number().int().min(1).max(65_535),
+  tlsFlowCapable: z.boolean().optional().default(false),
+  ssMethod: z.string().optional().default(""),
+}).passthrough();
+const client = z.object({
+  email: z.string(),
+  enable: z.boolean().optional().default(true),
+  expiryTime: z.number().int().optional().default(0),
+  totalGB: z.number().int().optional().default(0),
+  subId: z.string().optional().nullable(),
+  limitIp: z.number().int().optional().default(0),
+  comment: z.string().optional().default(""),
+}).passthrough();
 
 export interface ThreeXUiOptions {
   readonly baseUrl: string;
@@ -56,6 +72,13 @@ export class ThreeXUiClient {
   async listInboundOptions(): Promise<z.infer<typeof inboundOption>[]> { return this.request("panel/api/inbounds/options", "GET", z.array(inboundOption)); }
   async getClient(email: string): Promise<z.infer<typeof client>> { return this.request(`panel/api/clients/get/${encodeURIComponent(email)}`, "GET", client); }
   async createClient(input: CreateClientInput): Promise<unknown> {
+    requireSafeInteger(input.expiryTime, "expiryTime", 1);
+    requireSafeInteger(input.totalGB, "totalGB", 0);
+    requireSafeInteger(input.limitIp ?? 0, "limitIp", 0);
+    requireSafeInteger(input.telegramId ?? 0, "telegramId", 0);
+    if (input.inboundIds.length === 0 || input.inboundIds.some((id) => !Number.isSafeInteger(id) || id < 1)) {
+      throw new TypeError("inboundIds must contain positive safe integers");
+    }
     return this.request("panel/api/clients/add", "POST", z.unknown(), { client: { email: input.email, enable: true, expiryTime: input.expiryTime, totalGB: input.totalGB, limitIp: input.limitIp ?? 0, tgId: input.telegramId ?? 0, comment: input.comment ?? "hollowcon", reset: 0, security: "auto", subId: "" }, inboundIds: input.inboundIds });
   }
   async replaceClient(email: string, payload: Record<string, unknown>): Promise<unknown> { return this.request(`panel/api/clients/update/${encodeURIComponent(email)}`, "POST", z.unknown(), payload); }
@@ -72,8 +95,21 @@ export class ThreeXUiClient {
       signal: AbortSignal.timeout(this.timeoutMs),
     });
     if (!response.ok) throw new ThreeXUiError(`3x-ui HTTP ${response.status}`, response.status);
-    const parsed = envelope(z.unknown()).parse(await response.json());
+    let parsed: z.infer<typeof envelope>;
+    try {
+      parsed = envelope.parse(await response.json());
+    } catch {
+      throw new ThreeXUiError("3x-ui returned an invalid response envelope", response.status);
+    }
     if (!parsed.success) throw new ThreeXUiError(parsed.msg ?? "3x-ui rejected the operation", response.status);
-    return schema.parse(parsed.obj);
+    const validated = schema.safeParse(parsed.obj);
+    if (!validated.success) throw new ThreeXUiError("3x-ui returned an incompatible response payload", response.status);
+    return validated.data;
+  }
+}
+
+function requireSafeInteger(value: number, name: string, minimum: number): void {
+  if (!Number.isSafeInteger(value) || value < minimum) {
+    throw new TypeError(`${name} must be a safe integer greater than or equal to ${minimum}`);
   }
 }

@@ -55,9 +55,25 @@ CUSTOMER_ORDERS_ENABLED=false
 PANEL_MUTATIONS_ENABLED=false
 ```
 
-4. Confirm the payment-review screen, private receipt storage, and a full backup/restore drill.
-5. Choose one controlled inbound and a low-value test order. Set both flags to `true`, deploy with `./scripts/update.sh`, approve the test receipt only after manual bank confirmation, and verify the deterministic client, delivered links, audit event, and status screens.
-6. Keep a tested backup. Only then enable real customer orders. If an external panel call is ambiguous, leave the job in manual review; do not delete or recreate clients blindly.
+4. In BotFather, configure the Mini App URL and menu button to the exact HTTPS URL in `TELEGRAM_MINI_APP_URL`. Open the bot as the initial owner and confirm that the menu button launches inside Telegram, not a normal browser.
+5. Confirm the payment-review screen, private receipt storage, and a full backup/restore drill. Run `./scripts/doctor.sh`; it now verifies service health, completed migration/receipt-init jobs, private volume permissions, internal readiness, public API routing, and web delivery.
+6. Add operators from the Mini App owner screen. Assign only the required roles; changing or disabling an operator revokes active sessions. Finance staff must compare the exact rial amount to bank records manually before approval.
+7. Choose one controlled inbound and a low-value owner-only test order. First set `PANEL_MUTATIONS_ENABLED=true` while keeping normal customer ordering disabled, then use database `owner_test` order mode for the owner account. Approve the test receipt only after manual bank confirmation.
+8. Verify exactly one `hc-<order-id>@hollowcon.invalid` client exists on the selected 3x-ui inbound, with the correct traffic, device limit, and expiration. Confirm Telegram summary/link/QR delivery, Mini App configuration retrieval, provisioning and delivery timestamps, and audit records.
+9. Replay or restart the worker once and confirm no duplicate remote client or duplicate completed delivery is created. If a panel response is ambiguous, keep the job in manual review; never delete or recreate clients blindly.
+10. Keep a tested backup. Only after the controlled test succeeds should you set the database order mode to `enabled` and `CUSTOMER_ORDERS_ENABLED=true` for normal customers.
+
+## Management and role boundaries
+
+- **Owner:** bootstrap, safety settings, operators, cards, plans, panels, inbounds, finance, audit.
+- **Admin:** operational management except owner-only account and global safety actions.
+- **Finance:** manually inspect receipts and compare exact amounts against bank records; no automated settlement exists.
+- **Server operator:** panel, inbound, provisioning, and system visibility without finance authority.
+- **Support:** customer assistance without payment or infrastructure authority.
+- **Marketing:** campaign/customer visibility only where explicitly exposed.
+- **Auditor:** read-only operational and audit visibility.
+
+Card, plan, panel, and inbound updates require authenticated same-origin requests, CSRF protection, role checks, explicit confirmation text, rate limiting, and audit events. Panel-token rotation is tested against the panel before encrypted storage. Never lower inbound capacity below current active usage or deactivate the last active recipient card.
 
 ## Operations
 
@@ -86,4 +102,17 @@ cd /opt/hollowcon
 - Receipt upload validates declared media type, content magic bytes, file size, SHA-256, and private randomized storage paths; staff access is authorized and audited.
 - Receipt images are evidence for an operator, not automatic settlement proof. Do not enable automatic approval.
 - The bot uses Telegram long polling for the first release. The web surface verifies Telegram Mini App data server-side and uses secure session cookies plus CSRF/origin checks.
+- Redis-backed authentication and mutation rate limits fail closed. If Redis is unavailable, readiness fails and protected high-risk operations return a temporary service error rather than bypassing limits.
+- Provisioned subscription links and panel tokens are encrypted at rest. Telegram delivery stores durable progress after every summary, link, and QR step so interruption resumes from the last confirmed step.
 - Verify transfers against bank records; receipt images never prove settlement automatically.
+
+## Release procedure
+
+1. Review the complete diff and ensure `.env`, receipts, and backups are absent from Git.
+2. Run `git diff --check` and `pnpm check` locally.
+3. Commit and push to a branch, then wait for both GitHub Actions jobs:
+   - Real PostgreSQL migration deployment, concurrency tests, schema drift, workspace checks, and shell validation.
+   - Production image builds and an isolated Compose rehearsal for PostgreSQL, Redis, migrations, receipt initialization, API, web, worker, and shared receipt access.
+4. Tag an immutable release only after CI passes.
+5. On Ubuntu, run `./scripts/backup.sh`, then `./scripts/update.sh <release-tag>`.
+6. Keep customer orders and panel mutations disabled until the controlled owner test described above succeeds.

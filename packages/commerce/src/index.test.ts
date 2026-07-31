@@ -52,7 +52,7 @@ function createApprovalDatabase(state: TestState): ConstructorParameters<typeof 
       findUnique: () => Promise.resolve({ id: "finance-1", role: "finance" }),
     },
     paymentReceipt: {
-      findUnique: () => Promise.resolve({ id: "receipt-1", orderId: "order-1" }),
+      findFirst: () => Promise.resolve({ id: "receipt-1", orderId: "order-1" }),
     },
     paymentReview: {
       create: (argument: { data: Omit<TestState["reviews"][number], "id"> }) => {

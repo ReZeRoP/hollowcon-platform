@@ -6,6 +6,7 @@ import { generateOpaqueToken, hashOpaqueToken } from "@hollowcon/security";
 import { ApiError } from "./http.js";
 
 export const SESSION_COOKIE = "hollowcon_session";
+export const CSRF_COOKIE = "hollowcon_csrf";
 
 export interface AuthenticatedSession {
   readonly id: string;
@@ -49,6 +50,9 @@ export async function authenticateSession(
   if (!session || session.revokedAt || session.expiresAt <= new Date()) {
     throw new ApiError(401, "invalid_session", "Your session has expired");
   }
+  if (session.user.disabledAt) {
+    throw new ApiError(403, "account_disabled", "This account has been disabled");
+  }
   if (touch) {
     await prisma.adminSession.update({ where: { id: session.id }, data: { lastUsedAt: new Date() } });
   }
@@ -76,6 +80,17 @@ export function sessionCookie(value: string, expiresAt: Date): string {
   return `${SESSION_COOKIE}=${value}; Path=/; HttpOnly; Secure; SameSite=Lax; Expires=${expiresAt.toUTCString()}; Max-Age=${Math.max(0, Math.floor((expiresAt.getTime() - Date.now()) / 1_000))}`;
 }
 
+export function csrfCookie(value: string, expiresAt: Date): string {
+  return `${CSRF_COOKIE}=${value}; Path=/; Secure; SameSite=Lax; Expires=${expiresAt.toUTCString()}; Max-Age=${Math.max(0, Math.floor((expiresAt.getTime() - Date.now()) / 1_000))}`;
+}
+
+export function clearSessionCookies(): string[] {
+  return [
+    `${SESSION_COOKIE}=; Path=/; HttpOnly; Secure; SameSite=Lax; Max-Age=0`,
+    `${CSRF_COOKIE}=; Path=/; Secure; SameSite=Lax; Max-Age=0`,
+  ];
+}
+
 export function clearSessionCookie(): string {
-  return `${SESSION_COOKIE}=; Path=/; HttpOnly; Secure; SameSite=Lax; Max-Age=0`;
+  return clearSessionCookies()[0] ?? "";
 }

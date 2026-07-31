@@ -11,6 +11,22 @@ permissions:
 jobs:
   check:
     runs-on: ubuntu-24.04
+    services:
+      postgres:
+        image: postgres:17.2-alpine
+        env:
+          POSTGRES_DB: hollowcon_ci
+          POSTGRES_USER: hollowcon
+          POSTGRES_PASSWORD: hollowcon_ci
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U hollowcon -d hollowcon_ci"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      DATABASE_URL: postgresql://hollowcon:hollowcon_ci@127.0.0.1:5432/hollowcon_ci
     steps:
       - uses: actions/checkout@v4
       - uses: pnpm/action-setup@v4
@@ -22,16 +38,18 @@ jobs:
           cache: pnpm
       - run: pnpm install --frozen-lockfile
       - run: pnpm db:generate
+      - name: Rehearse database migrations
+        run: pnpm --filter @hollowcon/database exec prisma migrate deploy --schema prisma/schema.prisma
+      - name: Run PostgreSQL commerce concurrency tests
+        run: pnpm --filter @hollowcon/commerce exec vitest run src/postgres.integration.test.ts
       - run: pnpm check
       - name: Validate shell scripts
         run: bash -n scripts/*.sh
-      - name: Verify Prisma migration matches schema
-        env:
-          DATABASE_URL: postgresql://validation:validation@localhost:5432/validation
+      - name: Verify deployed database matches Prisma schema
         run: |
           pnpm --filter @hollowcon/database exec prisma migrate diff \
-            --from-migrations packages/database/prisma/migrations \
-            --to-schema-datamodel packages/database/prisma/schema.prisma \
+            --from-url "$DATABASE_URL" \
+            --to-schema-datamodel prisma/schema.prisma \
             --exit-code
 
   containers:
@@ -42,3 +60,21 @@ jobs:
         run: cp .env.example .env && docker compose --env-file .env -f infra/compose.prod.yml config --quiet
       - name: Build service images
         run: docker build --target api -t hollowcon-api:ci . && docker build --target web -t hollowcon-web:ci . && docker build --target bot -t hollowcon-bot:ci . && docker build --target worker -t hollowcon-worker:ci .
+      - name: Start production Compose runtime
+        run: |
+          sed -i 's/^INITIAL_OWNER_TELEGRAM_ID=.*/INITIAL_OWNER_TELEGRAM_ID=1/' .env
+          sed -i 's/^TELEGRAM_BOT_TOKEN=.*/TELEGRAM_BOT_TOKEN=123456789:ci-placeholder-token-value/' .env
+          sed -i 's/^POSTGRES_PASSWORD=.*/POSTGRES_PASSWORD=hollowcon_ci/' .env
+          sed -i 's|^DATABASE_URL=.*|DATABASE_URL=postgresql://hollowcon:hollowcon_ci@postgres:5432/hollowcon|' .env
+          docker compose --env-file .env -f infra/compose.prod.yml up -d --build --wait --wait-timeout 300 postgres redis migrate receipt-init api web worker
+          test "$(docker compose --env-file .env -f infra/compose.prod.yml ps -aq migrate | xargs docker inspect --format '{{.State.ExitCode}}')" = "0"
+          test "$(docker compose --env-file .env -f infra/compose.prod.yml ps -aq receipt-init | xargs docker inspect --format '{{.State.ExitCode}}')" = "0"
+          docker compose --env-file .env -f infra/compose.prod.yml exec -T api wget -qO- http://127.0.0.1:3000/health/ready | grep -q '"status":"ready"'
+          docker compose --env-file .env -f infra/compose.prod.yml exec -T web wget -qO- http://127.0.0.1:3001/health/ready | grep -q '"status":"ready"'
+          docker compose --env-file .env -f infra/compose.prod.yml run --rm --no-deps --entrypoint sh bot -c 'test -r /var/lib/hollowcon/receipts && test -w /var/lib/hollowcon/receipts'
+      - name: Show production logs on failure
+        if: failure()
+        run: docker compose --env-file .env -f infra/compose.prod.yml logs --no-color
+      - name: Stop production Compose runtime
+        if: always()
+        run: docker compose --env-file .env -f infra/compose.prod.yml down -v --remove-orphans

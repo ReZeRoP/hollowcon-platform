@@ -39,10 +39,11 @@ export function transitionOrder(current: OrderState, target: OrderState): OrderS
 export const PROVISIONING_TRANSITIONS = {
   queued: ["running", "failed"],
   running: ["verifying", "failed"],
-  verifying: ["delivered", "failed", "manual_review"],
+  verifying: ["provisioned", "failed", "manual_review"],
   failed: ["queued", "manual_review", "compensating"],
   compensating: ["failed", "manual_review"],
   manual_review: ["queued", "compensating"],
+  provisioned: [],
   delivered: [],
 } as const;
 

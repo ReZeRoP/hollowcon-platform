@@ -7,7 +7,11 @@ import { PrismaClient } from "@prisma/client";
 import { CommerceService } from "@hollowcon/commerce";
 import { loadConfig } from "@hollowcon/config";
 import { decryptSecret, maskIranianPan } from "@hollowcon/security";
-import { Bot, InlineKeyboard, Keyboard, type Context } from "grammy";
+import { Bot, InlineKeyboard, InputFile, Keyboard, type Context } from "grammy";
+import QRCode from "qrcode";
+
+import { NotificationDeliveryProcessor } from "./notification-delivery.js";
+import { safeTelegramError } from "./notification-logic.js";
 
 const config = loadConfig();
 const token = config.TELEGRAM_BOT_TOKEN;
@@ -16,6 +20,40 @@ const prisma = new PrismaClient();
 const commerce = new CommerceService(prisma);
 const bot = new Bot(token);
 let botReady = false;
+let notificationProcessing = false;
+const notificationWorkerId = `bot:${randomUUID()}`;
+const notificationProcessor = new NotificationDeliveryProcessor({
+  config,
+  prisma,
+  workerId: notificationWorkerId,
+  telegram: {
+    sendMessage: async (chatId, message, options) => {
+      const sent = await bot.api.sendMessage(chatId, message, options
+        ? {
+            reply_markup: new InlineKeyboard().webApp(
+              options.webAppText,
+              options.webAppUrl,
+            ),
+          }
+        : undefined);
+      return { messageId: sent.message_id };
+    },
+    sendPhoto: async (chatId, image, fileName, caption) => {
+      const sent = await bot.api.sendPhoto(
+        chatId,
+        new InputFile(image, fileName),
+        { caption },
+      );
+      return { messageId: sent.message_id };
+    },
+  },
+  renderQr: async (link) => QRCode.toBuffer(link, {
+    type: "png",
+    width: 640,
+    margin: 2,
+    errorCorrectionLevel: "M",
+  }),
+});
 
 type Locale = "fa" | "en";
 
@@ -45,6 +83,10 @@ const messages = {
     noServices: "هنوز سرویس فعالی ندارید.",
     supportUnavailable: "اطلاعات پشتیبانی هنوز تنظیم نشده است.",
     chooseAction: "یک گزینه را انتخاب کنید.",
+    miniApp: "باز کردن مینی‌اپ",
+    delivered: "سرویس شما آماده است. لینک‌ها و کدهای QR را محرمانه نگه دارید.",
+    config: "لینک اتصال",
+    qr: "کد QR اتصال",
   },
   en: {
     welcome: "Welcome to Hollowcon.",
@@ -67,6 +109,10 @@ const messages = {
     noServices: "You do not have an active service yet.",
     supportUnavailable: "Support contact has not been configured yet.",
     chooseAction: "Choose an option.",
+    miniApp: "Open Mini App",
+    delivered: "Your service is ready. Keep connection links and QR codes private.",
+    config: "Connection link",
+    qr: "Connection QR code",
   },
 } as const;
 
@@ -140,11 +186,12 @@ bot.callbackQuery(/^plan:([A-Za-z0-9_-]{8,64})$/u, async (context) => {
     return;
   }
   try {
+    const callbackMessageId = context.callbackQuery.message?.message_id ?? 0;
     const order = await commerce.createOrder({
       userId: user.id,
       planId,
       recipientCardId: card.id,
-      idempotencyKey: `telegram:${user.telegramId.toString()}:${randomUUID()}`,
+      idempotencyKey: `telegram:${user.telegramId.toString()}:${callbackMessageId}:${planId}`,
       reservationMinutes: config.PAYMENT_RESERVATION_MINUTES,
       uniqueSuffixMin: config.PAYMENT_UNIQUE_SUFFIX_MIN,
       uniqueSuffixMax: config.PAYMENT_UNIQUE_SUFFIX_MAX,
@@ -181,26 +228,23 @@ bot.on(["message:photo", "message:document"], async (context) => {
     await context.reply(text(locale, "receiptPrompt"));
     return;
   }
+  let stored: Awaited<ReturnType<typeof downloadTelegramReceipt>> | undefined;
   try {
     const attachment = getReceiptAttachment(context);
-    const stored = await downloadTelegramReceipt(attachment.fileId, attachment.mediaType, attachment.fileName);
-    try {
-      await commerce.submitReceipt({
-        orderId: order.id,
-        storageKey: stored.storageKey,
-        mediaType: stored.mediaType,
-        detectedMediaType: stored.mediaType,
-        byteSize: stored.byteSize,
-        sha256: stored.sha256,
-        telegramFileId: attachment.fileId,
-        ...(attachment.fileName ? { originalFileName: attachment.fileName } : {}),
-      });
-      await context.reply(text(locale, "receiptStored"));
-    } catch (error) {
-      await rm(stored.path, { force: true });
-      throw error;
-    }
+    stored = await downloadTelegramReceipt(attachment.fileId, attachment.mediaType, attachment.fileName);
+    await commerce.submitReceipt({
+      orderId: order.id,
+      storageKey: stored.storageKey,
+      mediaType: stored.mediaType,
+      detectedMediaType: stored.mediaType,
+      byteSize: stored.byteSize,
+      sha256: stored.sha256,
+      telegramFileId: attachment.fileId,
+      ...(attachment.fileName ? { originalFileName: attachment.fileName } : {}),
+    });
+    await context.reply(text(locale, "receiptStored"));
   } catch {
+    if (stored) await rm(stored.path, { force: true }).catch(() => undefined);
     await context.reply(text(locale, "receiptInvalid"));
   }
 });
@@ -274,6 +318,9 @@ async function showMainMenu(context: Context, locale: Locale): Promise<void> {
     .text(text(locale, "language"))
     .resized();
   await context.reply(text(locale, "chooseAction"), { reply_markup: keyboard });
+  await context.reply(text(locale, "miniApp"), {
+    reply_markup: new InlineKeyboard().webApp(text(locale, "miniApp"), config.TELEGRAM_MINI_APP_URL),
+  });
 }
 
 async function showPlans(context: Context, locale: Locale): Promise<void> {
@@ -309,6 +356,20 @@ async function showServices(context: Context, locale: Locale): Promise<void> {
   await context.reply(services.map((service) => `${service.status}\n${locale === "fa" ? "انقضا" : "Expires"}: ${service.expiresAt.toISOString()}`).join("\n\n"));
 }
 
+async function pollNotifications(): Promise<void> {
+  if (!botReady || notificationProcessing) return;
+  notificationProcessing = true;
+  try {
+    await notificationProcessor.recoverExpiredLeases();
+    const notification = await notificationProcessor.claimNotification();
+    if (notification) await notificationProcessor.deliverNotification(notification.id);
+  } catch (error) {
+    console.error(JSON.stringify({ level: "error", service: "bot", event: "notification.poll.failed", error: safeTelegramError(error) }));
+  } finally {
+    notificationProcessing = false;
+  }
+}
+
 async function upsertTelegramUser(from: { id: number; first_name: string; username?: string; language_code?: string } | undefined, locale?: Locale) {
   if (!from) throw new Error("Telegram user is required");
   return prisma.user.upsert({
@@ -338,15 +399,27 @@ healthServer.listen(port, "0.0.0.0", () => {
   console.info(JSON.stringify({ level: "info", service: "bot", event: "health-listening", port }));
 });
 
+bot.catch((error) => {
+  console.error(JSON.stringify({ level: "error", service: "bot", event: "update.failed", error: safeTelegramError(error.error) }));
+});
+
+const notificationInterval = setInterval(() => void pollNotifications(), config.WORKER_POLL_INTERVAL_MS);
+
 void bot.start({
-  onStart: () => {
+  onStart: async () => {
     botReady = true;
+    await bot.api.setMyCommands([
+      { command: "start", description: "Start Hollowcon" },
+    ]);
+    await bot.api.setChatMenuButton({ menu_button: { type: "web_app", text: "Hollowcon", web_app: { url: config.TELEGRAM_MINI_APP_URL } } });
+    void pollNotifications();
     console.info(JSON.stringify({ level: "info", service: "bot", event: "polling" }));
   },
 });
 
 async function shutdown(): Promise<void> {
   botReady = false;
+  clearInterval(notificationInterval);
   await bot.stop();
   healthServer.close();
   await prisma.$disconnect();

@@ -11,7 +11,7 @@ RUN pnpm build
 FROM node:22.22.0-alpine AS runtime
 WORKDIR /app
 ENV NODE_ENV=production
-RUN addgroup -S hollowcon && adduser -S hollowcon -G hollowcon
+RUN addgroup -S -g 10001 hollowcon && adduser -S -D -H -u 10001 -G hollowcon hollowcon
 COPY --from=build --chown=hollowcon:hollowcon /app/node_modules ./node_modules
 COPY --from=build --chown=hollowcon:hollowcon /app/apps ./apps
 COPY --from=build --chown=hollowcon:hollowcon /app/packages ./packages
@@ -24,7 +24,7 @@ CMD ["node", "apps/api/dist/index.js"]
 
 FROM runtime AS web
 EXPOSE 3001
-CMD ["node", "apps/web/dist/index.js"]
+CMD ["node", "apps/web/dist-server/index.js"]
 
 FROM runtime AS bot
 EXPOSE 3002
